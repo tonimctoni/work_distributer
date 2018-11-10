@@ -9,7 +9,9 @@ import "sync/atomic"
 import "encoding/json"
 import "crypto/ecdsa"
 import "crypto/x509"
+import "crypto/sha256"
 import "io/ioutil"
+import "math/big"
 
 func load_public_key() (*ecdsa.PublicKey, error){
     key_in_bytes, err:=ioutil.ReadFile("private.key")
@@ -129,6 +131,16 @@ func (b Busy) is_busy() bool{
     return atomic.LoadInt64(b.busy)!=0
 }
 
+func (b Busy) make_busy() bool{ // retruns true if made busy, false if it already was busy
+    old:=atomic.SwapInt64(b.busy, 1)
+    return old==0
+}
+
+func (b Busy) make_free() bool{ // retruns true if made free, false if it already was free
+    old:=atomic.SwapInt64(b.busy, 0)
+    return old!=0
+}
+
 func (b Busy) ServeHTTP(w http.ResponseWriter,r *http.Request){
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
@@ -144,24 +156,90 @@ func (b Busy) ServeHTTP(w http.ResponseWriter,r *http.Request){
 
 
 
-// type Worker struct{
-//     nonce Nonce
-//     busy Busy
-// }
+type Worker struct{
+    nonce Nonce
+    busy Busy
+    public_key *ecdsa.PublicKey
+}
 
-// func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
-//     w.Header().Set("Content-Type", "application/json")
-//     w.WriteHeader(http.StatusOK)
-//     return
-// }
+func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
+    w.Header().Set("Content-Type", "text/plain")
+
+    command_message:=Command{}
+    err:=json.NewDecoder(r.Body).Decode(&command_message)
+    if err!=nil{
+        w.WriteHeader(http.StatusBadRequest)
+        w.Write([]byte("error"))
+        fmt.Fprintln(os.Stderr, "Error decoding command:", err)
+        return
+    }
+
+    dir:=command_message.Dir
+    command:=command_message.Command
+    signature_r:=command_message.Signature_r
+    signature_s:=command_message.Signature_s
+
+    signature_r_bigint:=new(big.Int)
+    signature_s_bigint:=new(big.Int)
+
+    _,success_r:=signature_r_bigint.SetString(signature_r, 10)
+    _,success_s:=signature_s_bigint.SetString(signature_s, 10)
+
+    if !success_r || success_s{
+        w.WriteHeader(http.StatusBadRequest)
+        w.Write([]byte("error"))
+        fmt.Fprintln(os.Stderr, "Error decoding signature")
+        return
+    }
+
+    nonce, err:=o.nonce.get()
+    if err!=nil{
+        w.WriteHeader(http.StatusInternalServerError)
+        w.Write([]byte("error"))
+        fmt.Fprintln(os.Stderr, "Error getting nonce:", err)
+        return
+    }
+
+    string_to_check:=fmt.Sprintf("$$%s$$%s$$%x$$", dir, command, nonce)
+    hash_to_check:=sha256.Sum256([]byte(string_to_check))
+
+    checks_out:=ecdsa.Verify(o.public_key, hash_to_check[:], signature_r_bigint, signature_s_bigint)
+    if !checks_out{
+        w.WriteHeader(http.StatusBadRequest)
+        w.Write([]byte("signature_error"))
+        fmt.Fprintln(os.Stderr, "Error verifying signature")
+        return
+    }
+
+    if !o.busy.make_busy(){
+        w.WriteHeader(http.StatusPreconditionFailed)
+        w.Write([]byte("busy"))
+        fmt.Fprintln(os.Stderr, "Error: could not make busy")
+        return
+    }
+
+    go func(dir string, command string, busy Busy){
+        fmt.Println("Working: ", dir, command)
+        if !busy.make_free(){
+            fmt.Fprintln(os.Stderr, "Error: attempted to make busy free while it was already free")
+        }
+    }(dir, command, o.busy)
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("ok"))
+    return
+}
 
 
 
 
 
 func main() {
-    fmt.Println("end")
-    return
+    public_key,err:=load_public_key()
+    if err!=nil{
+        fmt.Fprintln(os.Stderr, "Error loading key:", err)
+    }
+
     mux:=http.NewServeMux()
     server:=&http.Server{
         Addr: ":4753",
@@ -179,7 +257,10 @@ func main() {
     busy:=Busy{busy:inner_busy}
     mux.Handle("/api/is_busy", busy)
 
-    err:=server.ListenAndServe()
+    worker:=Worker{nonce: nonce, busy: busy, public_key: public_key}
+    mux.Handle("/api/work", worker)
+
+    err=server.ListenAndServe()
     // err:=error(nil)
     // _=server
     if err!=nil{

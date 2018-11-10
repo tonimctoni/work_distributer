@@ -1,12 +1,10 @@
 package main;
 
-import "encoding/base64"
 import "encoding/json"
 import "crypto/ecdsa"
 import "crypto/x509"
 import "crypto/sha256"
 import "crypto/rand"
-import "crypto"
 import "io/ioutil"
 import "net/http"
 import "os"
@@ -110,11 +108,12 @@ func (c MyClient) get_nonce(host string) (uint64, error){
     return nonce_message.Nonce, err
 }
 
-func (c MyClient) send_work(host string, dir string, command string, signature string) error{
+func (c MyClient) send_work(host string, dir string, command string, signature_r string, signature_s string) error{
     command_message:=Command{
         Dir: dir,
         Command: command,
-        Signature: signature,
+        Signature_r: signature_r,
+        Signature_s: signature_s,
     }
 
     var buffer bytes.Buffer
@@ -188,23 +187,41 @@ func main() {
 
                 dir:=work.Dir
                 command:=work.Command
-                string_to_sign:=fmt.Sprintf("$$%s$$%s$$%x$$")
+                string_to_sign:=fmt.Sprintf("$$%s$$%s$$%x$$", dir, command, nonce)
                 hash_to_sign:=sha256.Sum256([]byte(string_to_sign))
-                signature_bytes, err:=private_key.Sign(rand.Reader, hash_to_sign[:], crypto.SHA256)
+                r,s,err:=ecdsa.Sign(rand.Reader, private_key, hash_to_sign[:])
                 if err!=nil{
                     fmt.Fprintln(os.Stderr, "Error signing:", err)
                     continue
                 }
-                signature_base64:=base64.StdEncoding.EncodeToString(signature_bytes)
 
-                err=client.send_work(host, dir, command, signature_base64)
+                signature_r:=r.String()
+                signature_s:=s.String()
+
+                err=client.send_work(host, dir, command, signature_r, signature_s)
                 if err!=nil{
                     fmt.Fprintln(os.Stderr, "Error sending work:", err)
                     continue
                 }
 
+
+                // signature_bytes, err:=private_key.Sign(rand.Reader, hash_to_sign[:], crypto.SHA256)
+                // if err!=nil{
+                //     fmt.Fprintln(os.Stderr, "Error signing:", err)
+                //     continue
+                // }
+                // signature_base64:=base64.StdEncoding.EncodeToString(signature_bytes)
+
+                // err=client.send_work(host, dir, command, signature_base64)
+                // if err!=nil{
+                //     fmt.Fprintln(os.Stderr, "Error sending work:", err)
+                //     continue
+                // }
+
                 continue outer
             }
+
+            time.Sleep(10*time.Second)
         }
     }
 }
