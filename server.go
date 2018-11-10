@@ -108,12 +108,8 @@ func (n Nonce) ServeHTTP(w http.ResponseWriter,r *http.Request){
         }
     }
 
-    var nonce_struct struct{
-        Nonce uint64 `json:"nonce"`
-    }
-
-    nonce_struct.Nonce=nonce
-    err=json.NewEncoder(w).Encode(&nonce_struct)
+    nonce_message:=NonceMessage{Nonce: nonce}
+    err=json.NewEncoder(w).Encode(&nonce_message)
     if err!=nil{
         fmt.Fprintln(os.Stderr, "Error encoding nonce:", err)
     }
@@ -136,14 +132,9 @@ func (b Busy) is_busy() bool{
 func (b Busy) ServeHTTP(w http.ResponseWriter,r *http.Request){
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
-    busy:=b.is_busy()
 
-    var busy_struct struct{
-        Busy bool `json:"busy"`
-    }
-
-    busy_struct.Busy=busy
-    err:=json.NewEncoder(w).Encode(&busy_struct)
+    busy_message:=BusyMessage{Busy: b.is_busy()}
+    err:=json.NewEncoder(w).Encode(&busy_message)
     if err!=nil{
         fmt.Fprintln(os.Stderr, "Error encoding busy:", err)
     }
@@ -151,7 +142,26 @@ func (b Busy) ServeHTTP(w http.ResponseWriter,r *http.Request){
 }
 
 
+
+
+// type Worker struct{
+//     nonce Nonce
+//     busy Busy
+// }
+
+// func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
+//     w.Header().Set("Content-Type", "application/json")
+//     w.WriteHeader(http.StatusOK)
+//     return
+// }
+
+
+
+
+
 func main() {
+    fmt.Println("end")
+    return
     mux:=http.NewServeMux()
     server:=&http.Server{
         Addr: ":4753",
