@@ -161,7 +161,7 @@ func main() {
     works:=work.Work
 
     outer: for _,work:=range works{
-        // Print what is going to be sent next here
+        fmt.Println("Next to send:", work.Dir, work.Command)
         for{
             for _,host:=range hosts{
                 busy,err:=client.is_host_busy(host)
@@ -203,20 +203,6 @@ func main() {
                     fmt.Fprintln(os.Stderr, "Error sending work:", err)
                     continue
                 }
-
-
-                // signature_bytes, err:=private_key.Sign(rand.Reader, hash_to_sign[:], crypto.SHA256)
-                // if err!=nil{
-                //     fmt.Fprintln(os.Stderr, "Error signing:", err)
-                //     continue
-                // }
-                // signature_base64:=base64.StdEncoding.EncodeToString(signature_bytes)
-
-                // err=client.send_work(host, dir, command, signature_base64)
-                // if err!=nil{
-                //     fmt.Fprintln(os.Stderr, "Error sending work:", err)
-                //     continue
-                // }
 
                 continue outer
             }

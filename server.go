@@ -1,10 +1,7 @@
 package main;
 
 import "net/http"
-import "time"
-import "fmt"
 import "crypto/rand"
-import "os"
 import "sync/atomic"
 import "encoding/json"
 import "crypto/ecdsa"
@@ -12,6 +9,10 @@ import "crypto/x509"
 import "crypto/sha256"
 import "io/ioutil"
 import "math/big"
+import "os/exec"
+import "time"
+import "fmt"
+import "os"
 
 func load_public_key() (*ecdsa.PublicKey, error){
     key_in_bytes, err:=ioutil.ReadFile("private.key")
@@ -182,13 +183,13 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
     signature_r_bigint:=new(big.Int)
     signature_s_bigint:=new(big.Int)
 
-    _,success_r:=signature_r_bigint.SetString(signature_r, 10)
-    _,success_s:=signature_s_bigint.SetString(signature_s, 10)
+    _, err_r := fmt.Sscan(signature_r, signature_r_bigint)
+    _, err_s := fmt.Sscan(signature_s, signature_s_bigint)
 
-    if !success_r || success_s{
+    if err_r!=nil || err_s!=nil{
         w.WriteHeader(http.StatusBadRequest)
         w.Write([]byte("error"))
-        fmt.Fprintln(os.Stderr, "Error decoding signature")
+        fmt.Fprintln(os.Stderr, "Error decoding signature", err_r, err_s)
         return
     }
 
@@ -219,7 +220,15 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
     }
 
     go func(dir string, command string, busy Busy){
-        fmt.Println("Working: ", dir, command)
+        fmt.Println("Working on: ", dir, command)
+        cmd:=exec.Command(command)
+        cmd.Stdout=os.Stdout
+        cmd.Stderr=os.Stderr
+        cmd.Dir=dir
+        err:=cmd.Run()
+        if err!=nil{
+            fmt.Fprintln(os.Stderr, "Error while running command", err)
+        }
         if !busy.make_free(){
             fmt.Fprintln(os.Stderr, "Error: attempted to make busy free while it was already free")
         }
@@ -261,11 +270,8 @@ func main() {
     mux.Handle("/api/work", worker)
 
     err=server.ListenAndServe()
-    // err:=error(nil)
-    // _=server
     if err!=nil{
         fmt.Fprintln(os.Stderr, "Error:", err)
-        // fmt.Println("Error:", err)
     }
     fmt.Println("end")
 }
