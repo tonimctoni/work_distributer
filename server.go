@@ -220,18 +220,21 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
     }
 
     go func(dir string, command string, busy Busy){
-        fmt.Println("Working on: ", dir, command)
         cmd:=exec.Command(command)
         cmd.Stdout=os.Stdout
         cmd.Stderr=os.Stderr
         cmd.Dir=dir
+        fmt.Println("Executing:", dir, command)
         err:=cmd.Run()
         if err!=nil{
             fmt.Fprintln(os.Stderr, "Error while running command", err)
+            return
         }
         if !busy.make_free(){
             fmt.Fprintln(os.Stderr, "Error: attempted to make busy free while it was already free")
+            return
         }
+        fmt.Println("Command was executed successfully:", dir, command)
     }(dir, command, o.busy)
 
     w.WriteHeader(http.StatusOK)
@@ -247,6 +250,7 @@ func main() {
     public_key,err:=load_public_key()
     if err!=nil{
         fmt.Fprintln(os.Stderr, "Error loading key:", err)
+        return
     }
 
     mux:=http.NewServeMux()

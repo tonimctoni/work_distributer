@@ -145,11 +145,13 @@ func main() {
     private_key,err:=load_private_key()
     if err!=nil{
         fmt.Fprintln(os.Stderr, "Error loading key:", err)
+        return
     }
 
     work,err:=load_work()
     if err!=nil{
         fmt.Fprintln(os.Stderr, "Error loading work:", err)
+        return
     }
 
     inner_client:=&http.Client{
@@ -203,6 +205,8 @@ func main() {
                     fmt.Fprintln(os.Stderr, "Error sending work:", err)
                     continue
                 }
+
+                fmt.Println("Host", host, "accetpted work", dir, command)
 
                 continue outer
             }
