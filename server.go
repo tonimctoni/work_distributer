@@ -1,13 +1,13 @@
 package main;
 
-import "net/http"
-import "crypto/rand"
-import "sync/atomic"
 import "encoding/json"
+import "crypto/sha256"
 import "crypto/ecdsa"
 import "crypto/x509"
-import "crypto/sha256"
+import "crypto/rand"
+import "sync/atomic"
 import "io/ioutil"
+import "net/http"
 import "math/big"
 import "os/exec"
 import "time"
@@ -175,8 +175,7 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
         return
     }
 
-    dir:=command_message.Dir
-    command:=command_message.Command
+    work_path:=command_message.Work_path
     signature_r:=command_message.Signature_r
     signature_s:=command_message.Signature_s
 
@@ -201,7 +200,7 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
         return
     }
 
-    string_to_check:=fmt.Sprintf("$$%s$$%s$$%x$$", dir, command, nonce)
+    string_to_check:=fmt.Sprintf("$$%s$$%x$$", work_path, nonce)
     hash_to_check:=sha256.Sum256([]byte(string_to_check))
 
     checks_out:=ecdsa.Verify(o.public_key, hash_to_check[:], signature_r_bigint, signature_s_bigint)
@@ -219,12 +218,12 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
         return
     }
 
-    go func(dir string, command string, busy Busy){
-        cmd:=exec.Command(command)
+    go func(work_path string, busy Busy){
+        cmd:=exec.Command("make")
         cmd.Stdout=os.Stdout
         cmd.Stderr=os.Stderr
-        cmd.Dir=dir
-        fmt.Println("Executing:", dir, command)
+        cmd.Dir=work_path
+        fmt.Println("Executing:", work_path)
         err:=cmd.Run()
         if err!=nil{
             fmt.Fprintln(os.Stderr, "Error while running command", err)
@@ -234,8 +233,8 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
             fmt.Fprintln(os.Stderr, "Error: attempted to make busy free while it was already free")
             return
         }
-        fmt.Println("Command was executed successfully:", dir, command)
-    }(dir, command, o.busy)
+        fmt.Println("Command was executed successfully:", work_path)
+    }(work_path, o.busy)
 
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("ok"))

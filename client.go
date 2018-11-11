@@ -1,16 +1,17 @@
 package main;
 
 import "encoding/json"
+import "crypto/sha256"
 import "crypto/ecdsa"
 import "crypto/x509"
-import "crypto/sha256"
 import "crypto/rand"
 import "io/ioutil"
 import "net/http"
-import "os"
-import "fmt"
-import "time"
+import "strings"
 import "bytes"
+import "time"
+import "fmt"
+import "os"
 
 func load_private_key() (*ecdsa.PrivateKey, error){
     key_in_bytes, err:=ioutil.ReadFile("private.key")
@@ -19,6 +20,26 @@ func load_private_key() (*ecdsa.PrivateKey, error){
     }
 
     return x509.ParseECPrivateKey(key_in_bytes)
+}
+
+func read_list_file(filename string) ([]string, error){
+    content, err:=ioutil.ReadFile(filename)
+    if err!=nil{
+        return nil, err
+    }
+
+    lines:=strings.Split(string(content), "\n")
+    return_strings:=make([]string, 0, len(lines))
+    for _,line :=range lines{
+        trimmed_line:=strings.TrimSpace(line)
+        if len(trimmed_line)==0{
+            continue
+        }
+
+        return_strings=append(return_strings, trimmed_line)
+    }
+
+    return return_strings, nil
 }
 
 type Work struct{
@@ -108,10 +129,9 @@ func (c MyClient) get_nonce(host string) (uint64, error){
     return nonce_message.Nonce, err
 }
 
-func (c MyClient) send_work(host string, dir string, command string, signature_r string, signature_s string) error{
+func (c MyClient) send_work(host string, work_path string, signature_r string, signature_s string) error{
     command_message:=Command{
-        Dir: dir,
-        Command: command,
+        Work_path: work_path,
         Signature_r: signature_r,
         Signature_s: signature_s,
     }
@@ -148,9 +168,15 @@ func main() {
         return
     }
 
-    work,err:=load_work()
+    hosts, err:=read_list_file("hosts.list")
     if err!=nil{
-        fmt.Fprintln(os.Stderr, "Error loading work:", err)
+        fmt.Fprintln(os.Stderr, "Error reading hosts:", err)
+        return
+    }
+
+    work_paths, err:=read_list_file("work_paths.list")
+    if err!=nil{
+        fmt.Fprintln(os.Stderr, "Error reading work paths:", err)
         return
     }
 
@@ -159,11 +185,8 @@ func main() {
     }
     client:=MyClient{client: inner_client}
 
-    hosts:=work.Hosts
-    works:=work.Work
-
-    outer: for _,work:=range works{
-        fmt.Println("Next to send:", work.Dir, work.Command)
+    outer: for _,work_path:=range work_paths{
+        fmt.Println("Next to send:", work_path)
         for{
             for _,host:=range hosts{
                 busy,err:=client.is_host_busy(host)
@@ -187,9 +210,7 @@ func main() {
                     continue
                 }
 
-                dir:=work.Dir
-                command:=work.Command
-                string_to_sign:=fmt.Sprintf("$$%s$$%s$$%x$$", dir, command, nonce)
+                string_to_sign:=fmt.Sprintf("$$%s$$%x$$", work_path, nonce)
                 hash_to_sign:=sha256.Sum256([]byte(string_to_sign))
                 r,s,err:=ecdsa.Sign(rand.Reader, private_key, hash_to_sign[:])
                 if err!=nil{
@@ -200,13 +221,13 @@ func main() {
                 signature_r:=r.String()
                 signature_s:=s.String()
 
-                err=client.send_work(host, dir, command, signature_r, signature_s)
+                err=client.send_work(host, work_path, signature_r, signature_s)
                 if err!=nil{
                     fmt.Fprintln(os.Stderr, "Error sending work:", err)
                     continue
                 }
 
-                fmt.Println("Host", host, "accetpted work", dir, command)
+                fmt.Println("Host", host, "accetpted")
 
                 continue outer
             }

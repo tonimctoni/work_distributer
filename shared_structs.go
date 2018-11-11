@@ -12,8 +12,7 @@ type BusyMessage struct{
 }
 
 type Command struct{
-    Dir string `json:"dir"`
-    Command string `json:"command"`
+    Work_path string `json:"work_path"`
     Signature_r string `json:"signature_r"`
     Signature_s string `json:"signature_s"`
 }

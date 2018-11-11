@@ -2,3 +2,5 @@ private.key
 work.json
 client
 server
+hosts.list
+work_paths.list
