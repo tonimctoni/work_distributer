@@ -262,18 +262,16 @@ func main() {
         Handler: mux,
     }
 
-    new_nonce, err:=get_random_u64()
+    first_nonce, err:=get_random_u64()
     if err!=nil{
         fmt.Fprintln(os.Stderr, "Error generating new nonce:", err)
     }
 
-    inner_nonce:=new(uint64)
-    *inner_nonce=new_nonce
-    nonce:=Nonce{nonce:inner_nonce}
+    nonce:=Nonce{nonce: new(uint64)}
+    nonce.swap(first_nonce)
     mux.Handle("/api/get_nonce", nonce)
 
-    inner_busy:=new(int64)
-    busy:=Busy{busy:inner_busy}
+    busy:=Busy{busy: new(int64)}
     mux.Handle("/api/is_busy", busy)
 
     worker:=Worker{nonce: nonce, busy: busy, public_key: public_key}
