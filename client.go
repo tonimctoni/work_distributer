@@ -89,14 +89,28 @@ type MyClient struct{
 
 type StatusCodeIsNotOk struct{
     content string
+    host string
+    code int
 }
 
 func (s StatusCodeIsNotOk) Error() string{
-    if len(s.content)==0{
-        return "StatusCodeIsNotOk"
+    content:=""
+    host:=""
+    code:=""
+
+    if len(s.content)!=0{
+        content=fmt.Sprintf("(content=%s)", s.content)
     }
 
-    return fmt.Sprintf("StatusCodeIsNotOk(%s)", s.content)
+    if len(s.host)!=0{
+        host=fmt.Sprintf("(host=%s)", s.host)
+    }
+
+    if s.code!=0{
+        code=fmt.Sprintf("(code=%d)", s.code)
+    }
+
+    return fmt.Sprintf("StatusCodeIsNotOk%s%s%s", host, content, code)
 }
 
 func (c MyClient) is_host_busy(host string) (bool, error){
@@ -106,7 +120,7 @@ func (c MyClient) is_host_busy(host string) (bool, error){
     }
 
     if response.StatusCode!=200{
-        return false, StatusCodeIsNotOk{}
+        return false, StatusCodeIsNotOk{host: host, code: response.StatusCode}
     }
 
     var busy_message BusyMessage
@@ -121,7 +135,7 @@ func (c MyClient) get_nonce(host string) (uint64, error){
     }
 
     if response.StatusCode!=200{
-        return 0, StatusCodeIsNotOk{}
+        return 0, StatusCodeIsNotOk{host: host, code: response.StatusCode}
     }
 
     var nonce_message NonceMessage
@@ -150,11 +164,11 @@ func (c MyClient) send_work(host string, work_path string, signature_r string, s
     if response.StatusCode!=200{
         content, err:=ioutil.ReadAll(response.Body)
         if err!=nil{
-            return StatusCodeIsNotOk{content: "Could not read: "+err.Error()}
+            return StatusCodeIsNotOk{host: host, code: response.StatusCode, content: "Could not read: "+err.Error()}
         }
         response.Body.Close()
 
-        return StatusCodeIsNotOk{content: string(content)}
+        return StatusCodeIsNotOk{host: host, code: response.StatusCode, content: string(content)}
     }
 
     return nil

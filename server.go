@@ -72,23 +72,16 @@ type Nonce struct{
     nonce *uint64
 }
 
-func (n Nonce) reset() (uint64,error){
-    new_nonce, err:=get_random_u64()
-    if err!=nil{
-        atomic.StoreUint64(n.nonce, 0)
-        return 0, err
-    }
-
-    if new_nonce==0{
-        atomic.StoreUint64(n.nonce, 0)
+func (n Nonce) swap(new_nonce uint64) (uint64,error){
+    nonce:=atomic.SwapUint64(n.nonce, new_nonce)
+    if nonce==0{
         return 0, NonceInErrorState{}
     }
 
-    atomic.StoreUint64(n.nonce, new_nonce)
-    return new_nonce, nil
+    return nonce, nil
 }
 
-func (n Nonce) get() (uint64,error){
+func (n Nonce) peek() (uint64,error){
     nonce:=atomic.LoadUint64(n.nonce)
     if nonce==0{
         return 0, NonceInErrorState{}
@@ -99,16 +92,19 @@ func (n Nonce) get() (uint64,error){
 
 func (n Nonce) ServeHTTP(w http.ResponseWriter,r *http.Request){
     w.Header().Set("Content-Type", "application/json")
-    nonce, err:=n.reset()
-    if err!=nil{
-        fmt.Fprintln(os.Stderr, "Error resetting nonce:", err)
+    nonce, err:=n.peek()
+    if err!=nil || nonce==0{
+        fmt.Fprintln(os.Stderr, "Error getting nonce:", err)
+        new_nonce, err:=get_random_u64()
+        if err!=nil{
+            fmt.Fprintln(os.Stderr, "Error generating new nonce:", err)
+        } else{
+            n.swap(new_nonce)
+        }
+
         w.WriteHeader(http.StatusInternalServerError)
     } else{
-        if nonce==0{
-            w.WriteHeader(http.StatusInternalServerError)
-        } else{
-            w.WriteHeader(http.StatusOK)
-        }
+        w.WriteHeader(http.StatusOK)
     }
 
     nonce_message:=NonceMessage{Nonce: nonce}
@@ -192,7 +188,12 @@ func (o Worker) ServeHTTP(w http.ResponseWriter,r *http.Request){
         return
     }
 
-    nonce, err:=o.nonce.get()
+    new_nonce, err:=get_random_u64()
+    if err!=nil{
+        fmt.Fprintln(os.Stderr, "Error generating new nonce:", err)
+    }
+
+    nonce, err:=o.nonce.swap(new_nonce)
     if err!=nil{
         w.WriteHeader(http.StatusInternalServerError)
         w.Write([]byte("error"))
@@ -261,7 +262,13 @@ func main() {
         Handler: mux,
     }
 
+    new_nonce, err:=get_random_u64()
+    if err!=nil{
+        fmt.Fprintln(os.Stderr, "Error generating new nonce:", err)
+    }
+
     inner_nonce:=new(uint64)
+    *inner_nonce=new_nonce
     nonce:=Nonce{nonce:inner_nonce}
     mux.Handle("/api/get_nonce", nonce)
 
