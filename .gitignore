@@ -4,3 +4,7 @@ client
 server
 hosts.list
 work_paths.list
+get_host_list.go
+get_host_list.sh
+stuff
+compiled
